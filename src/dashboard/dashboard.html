@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>AI 网页翻译 - 管理面板</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <span class="logo">译</span>
+      <h1>AI 网页翻译 · 管理面板</h1>
+    </header>
+
+    <!-- API 配置 -->
+    <section class="card">
+      <h2>API 配置</h2>
+      <p class="desc">兼容 OpenAI 协议的服务均可使用（如 DeepSeek、通义、Kimi、自建网关等）</p>
+      <div class="field">
+        <label for="baseUrl">Base URL</label>
+        <input id="baseUrl" type="text" placeholder="https://api.deepseek.com">
+        <div class="hint">接口基础地址，可带 /v1，插件会自动拼接 /chat/completions</div>
+      </div>
+      <div class="field">
+        <label for="apiKey">API Key</label>
+        <input id="apiKey" type="password" placeholder="sk-...">
+      </div>
+      <div class="field">
+        <label for="model">模型</label>
+        <input id="model" type="text" placeholder="deepseek-v4-flash">
+      </div>
+      <div class="btn-row">
+        <button id="saveBtn" class="btn btn-primary">保存</button>
+        <button id="testBtn" class="btn btn-secondary">测试连接</button>
+      </div>
+      <div id="apiStatus" class="status"></div>
+    </section>
+
+    <!-- 语言设置 -->
+    <section class="card">
+      <h2>语言设置</h2>
+      <p class="desc">源语言为"自动检测"时，若文本已是目标语言则自动做中英互译</p>
+      <div class="field-row">
+        <div class="field">
+          <label for="sourceLang">源语言</label>
+          <select id="sourceLang">
+            <option value="auto">自动检测</option>
+            <option value="中文">中文</option>
+            <option value="英语">英语</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="targetLang">目标语言</label>
+          <select id="targetLang">
+            <option value="中文">中文</option>
+            <option value="英语">英语</option>
+            <option value="日语">日语</option>
+            <option value="韩语">韩语</option>
+            <option value="法语">法语</option>
+            <option value="德语">德语</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button id="saveLangBtn" class="btn btn-primary">保存语言设置</button>
+      </div>
+      <div id="langStatus" class="status"></div>
+    </section>
+
+    <!-- Token 统计 -->
+    <section class="card">
+      <h2>Token 消耗统计</h2>
+      <div class="stats-grid">
+        <div class="stat"><div class="stat-value" id="statTotal">0</div><div class="stat-label">总 Token</div></div>
+        <div class="stat"><div class="stat-value" id="statPrompt">0</div><div class="stat-label">输入 Token</div></div>
+        <div class="stat"><div class="stat-value" id="statCompletion">0</div><div class="stat-label">输出 Token</div></div>
+        <div class="stat"><div class="stat-value" id="statCount">0</div><div class="stat-label">请求次数</div></div>
+      </div>
+      <div class="btn-row">
+        <button id="resetStatsBtn" class="btn btn-secondary">清零统计</button>
+      </div>
+    </section>
+
+    <!-- 历史记录 -->
+    <section class="card">
+      <h2>翻译历史记录</h2>
+      <div id="historyList" class="history-list"></div>
+      <div class="btn-row">
+        <button id="clearHistoryBtn" class="btn btn-secondary">清空历史</button>
+      </div>
+    </section>
+  </div>
+  <script src="dashboard.js"></script>
+</body>
+</html>

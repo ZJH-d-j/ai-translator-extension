@@ -1,4 +1,4 @@
-// 后台服务：统一处理 OpenAI 兼容协议的 API 调用
+// 后台服务：统一处理 OpenAI 兼容协议的 API 调用、token 统计与历史记录
 
 const DEFAULT_CONFIG = {
   baseUrl: 'https://api.deepseek.com',
@@ -15,10 +15,10 @@ async function getConfig() {
   };
 }
 
-// 调用 OpenAI 兼容的 chat/completions 接口
+// 调用 OpenAI 兼容的 chat/completions 接口，返回 { text, usage }
 async function callAI(messages, maxTokens) {
   const { baseUrl, apiKey, model } = await getConfig();
-  if (!apiKey) throw new Error('未配置 API Key，请先在设置页填写');
+  if (!apiKey) throw new Error('未配置 API Key，请先在管理面板填写');
 
   const url = baseUrl.endsWith('/chat/completions') ? baseUrl : baseUrl + '/chat/completions';
   const body = { model, messages };
@@ -40,7 +40,34 @@ async function callAI(messages, maxTokens) {
   const data = await resp.json();
   const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
   if (!content) throw new Error('API 返回内容为空');
-  return content.trim();
+  return { text: content.trim(), usage: data.usage || null };
+}
+
+// 累计 token 消耗
+async function addTokenUsage(usage) {
+  if (!usage) return;
+  const { tokenStats = { prompt: 0, completion: 0, total: 0, count: 0 } } =
+    await chrome.storage.local.get('tokenStats');
+  tokenStats.prompt += usage.prompt_tokens || 0;
+  tokenStats.completion += usage.completion_tokens || 0;
+  tokenStats.total += usage.total_tokens || 0;
+  tokenStats.count += 1;
+  await chrome.storage.local.set({ tokenStats });
+}
+
+// 追加历史记录（最多保留 100 条，新的在前）
+async function addHistoryEntry(entry) {
+  const { history = [] } = await chrome.storage.local.get('history');
+  history.unshift({ time: Date.now(), ...entry });
+  if (history.length > 100) history.length = 100;
+  await chrome.storage.local.set({ history });
+}
+
+// 调用 AI 并累计 token
+async function run(messages, maxTokens) {
+  const { text, usage } = await callAI(messages, maxTokens);
+  await addTokenUsage(usage);
+  return text;
 }
 
 function handleAsync(fn) {
@@ -54,14 +81,18 @@ function handleAsync(fn) {
 }
 
 const handlers = {
-  // 单段翻译：msg.text, msg.targetLang
-  translate: msg => callAI([
-    { role: 'system', content: `你是专业翻译引擎。把用户给出的文本翻译成${msg.targetLang}，只输出译文，不要解释，不要添加引号。` },
-    { role: 'user', content: msg.text }
-  ]),
+  // 单段翻译：msg.text, msg.sourceLang('auto' 或语言名), msg.targetLang
+  translate: msg => {
+    const source = msg.sourceLang && msg.sourceLang !== 'auto'
+      ? `以下${msg.sourceLang}文本` : '用户给出的文本（自动识别语言）';
+    return run([
+      { role: 'system', content: `你是专业翻译引擎。把${source}翻译成${msg.targetLang}，只输出译文，不要解释，不要添加引号。` },
+      { role: 'user', content: msg.text }
+    ]);
+  },
 
-  // 批量翻译（整页）：msg.items 为字符串数组，返回用 <|> 分隔的译文
-  translateBatch: msg => callAI([
+  // 批量翻译（整页）：msg.text 为 <编号>文本 列表
+  translateBatch: msg => run([
     {
       role: 'system',
       content: `你是专业翻译引擎。用户会给出多段用编号 <数字> 标记的文本，请把每一段翻译成${msg.targetLang}。
@@ -73,16 +104,19 @@ const handlers = {
     { role: 'user', content: msg.text }
   ], 8192),
 
-  // 网页总结：msg.text 为正文
-  summarize: msg => callAI([
+  // 网页总结：msg.text 为正文，msg.lang 为输出语言
+  summarize: msg => run([
     { role: 'system', content: `你是网页内容总结助手。请用${msg.lang}总结用户给出的网页正文，输出 3-6 个要点（用 - 开头），最后给出一句话总评。语言精炼。` },
     { role: 'user', content: msg.text }
   ]),
 
   // 测试连接
-  testConnection: () => callAI([
+  testConnection: () => run([
     { role: 'user', content: '回复"连接成功"四个字即可。' }
-  ])
+  ]),
+
+  // 记录历史：msg.entry = { type, source, result }
+  addHistory: msg => addHistoryEntry(msg.entry)
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

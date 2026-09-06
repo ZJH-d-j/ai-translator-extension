@@ -1,0 +1,236 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: #f3f4f6;
+  color: #1f2329;
+  padding: 32px 16px 64px;
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.logo {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 9px;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.page-header h1 {
+  font-size: 19px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 22px 26px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .06);
+  margin-bottom: 18px;
+}
+
+.card h2 {
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+.desc {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 16px;
+}
+
+.field {
+  margin-bottom: 14px;
+  flex: 1;
+}
+
+.field-row {
+  display: flex;
+  gap: 14px;
+}
+
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  background: #fff;
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+
+.field .hint {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+
+.btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 9px 20px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.btn-primary {
+  background: #2563eb;
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.btn-secondary {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #dbeafe;
+}
+
+.status {
+  margin-top: 12px;
+  font-size: 13px;
+  min-height: 18px;
+}
+
+.status.ok {
+  color: #16a34a;
+}
+
+.status.error {
+  color: #dc2626;
+}
+
+/* Token 统计 */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 14px 0 16px;
+}
+
+.stat {
+  background: #f8fafc;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  padding: 14px 8px;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #2563eb;
+  word-break: break-all;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+/* 历史记录 */
+.history-list {
+  margin: 12px 0 14px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.history-empty {
+  color: #9ca3af;
+  font-size: 13px;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.history-item {
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.history-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.history-type {
+  background: #eff6ff;
+  color: #2563eb;
+  border-radius: 5px;
+  font-size: 12px;
+  padding: 1px 8px;
+}
+
+.history-time {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.history-source {
+  font-size: 13px;
+  color: #6b7280;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.history-result {
+  font-size: 14px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}

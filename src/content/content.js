@@ -13,8 +13,21 @@
 
   // ---------- 工具 ----------
 
-  function detectTargetLang(text) {
-    return /[一-龥]/.test(text) ? '英语' : '中文';
+  // 根据用户语言设置和文本内容确定翻译方向
+  // 自动模式下：文本已是目标语言时做中英互译兜底
+  async function resolveDirection(sample) {
+    const cfg = await chrome.storage.sync.get(['sourceLang', 'targetLang']);
+    const source = cfg.sourceLang || 'auto';
+    const target = cfg.targetLang || '中文';
+    if (source !== 'auto') return { sourceLang: source, targetLang: target };
+    const isZh = /[一-龥]/.test(sample);
+    if (target === '中文' && isZh) return { sourceLang: 'auto', targetLang: '英语' };
+    if (target === '英语' && !isZh) return { sourceLang: 'auto', targetLang: '中文' };
+    return { sourceLang: 'auto', targetLang: target };
+  }
+
+  function recordHistory(type, source, result) {
+    sendMessage({ type: 'addHistory', entry: { type, source, result } });
   }
 
   function sendMessage(msg) {
@@ -59,10 +72,11 @@
   async function translateSelection(text, x, y) {
     hideSelectUI();
     showResultPanel('翻译中…', x, y);
-    const targetLang = detectTargetLang(text);
-    const resp = await sendMessage({ type: 'translate', text, targetLang });
+    const dir = await resolveDirection(text);
+    const resp = await sendMessage({ type: 'translate', text, sourceLang: dir.sourceLang, targetLang: dir.targetLang });
     if (resp.ok) {
       showResultPanel(resp.text, x, y, text);
+      recordHistory('划词翻译', text.slice(0, 200), resp.text.slice(0, 500));
     } else {
       showResultPanel('翻译失败：' + resp.error, x, y, text, true);
     }
@@ -216,9 +230,10 @@
       return;
     }
 
-    // 目标语言：页面主体是中文则译成英文，反之译成中文
+    // 目标语言：按用户设置，自动模式下页面主体是中文则译成英文，反之译成中文
     const pageText = nodes.slice(0, 50).map(n => n.nodeValue).join('');
-    const targetLang = detectTargetLang(pageText);
+    const dir = await resolveDirection(pageText);
+    const targetLang = dir.targetLang;
 
     const batches = makeBatches(nodes, 4000);
     showProgress('正在翻译…', 0);
@@ -256,6 +271,9 @@
     await Promise.all(workers);
 
     showProgress(failed ? `翻译完成（${failed} 个批次失败，相应段落保留原文）` : '翻译完成', 1);
+    if (failed < batches.length) {
+      recordHistory('全页翻译', `${location.hostname}（${nodes.length} 段）`, `译为${targetLang}`);
+    }
   }
 
   // ---------- 网页总结 ----------
@@ -275,6 +293,7 @@
     }
     const resp = await sendMessage({ type: 'summarize', text, lang: '中文' });
     showSummaryPanel(resp.ok ? resp.text : '总结失败：' + resp.error);
+    if (resp.ok) recordHistory('网页总结', document.title, resp.text.slice(0, 500));
   }
 
   let summaryPanel = null;

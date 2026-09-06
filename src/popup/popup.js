@@ -37,8 +37,16 @@ async function sendToActiveTab(msg) {
   }
 }
 
-function detectTargetLang(text) {
-  return /[一-龥]/.test(text) ? '英语' : '中文';
+// 根据用户语言设置和文本内容确定翻译方向（与 content.js 逻辑一致）
+async function resolveDirection(sample) {
+  const cfg = await chrome.storage.sync.get(['sourceLang', 'targetLang']);
+  const source = cfg.sourceLang || 'auto';
+  const target = cfg.targetLang || '中文';
+  if (source !== 'auto') return { sourceLang: source, targetLang: target };
+  const isZh = /[一-龥]/.test(sample);
+  if (target === '中文' && isZh) return { sourceLang: 'auto', targetLang: '英语' };
+  if (target === '英语' && !isZh) return { sourceLang: 'auto', targetLang: '中文' };
+  return { sourceLang: 'auto', targetLang: target };
 }
 
 async function checkConfig() {
@@ -80,11 +88,15 @@ $('quickTranslateBtn').addEventListener('click', () => withBusy($('quickTranslat
   }
   setStatus('翻译中…');
   result.classList.add('hidden');
-  const resp = await sendToBackground({ type: 'translate', text, targetLang: detectTargetLang(text) });
+  const dir = await resolveDirection(text);
+  const resp = await sendToBackground({ type: 'translate', text, sourceLang: dir.sourceLang, targetLang: dir.targetLang });
   result.classList.remove('hidden');
   result.classList.toggle('error', !resp.ok);
   result.textContent = resp.ok ? resp.text : '翻译失败：' + resp.error;
   setStatus(resp.ok ? '' : resp.error, !resp.ok);
+  if (resp.ok) {
+    sendToBackground({ type: 'addHistory', entry: { type: '快速翻译', source: text.slice(0, 200), result: resp.text.slice(0, 500) } });
+  }
 }));
 
 $('openSettings').addEventListener('click', () => chrome.runtime.openOptionsPage());
