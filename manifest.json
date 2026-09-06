@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "AI 网页翻译",
+  "version": "1.0.0",
+  "description": "基于 OpenAI 兼容协议的全页翻译、划词翻译与网页总结插件",
+  "permissions": ["storage", "activeTab", "scripting", "contextMenus"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/background/background.js"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "AI 网页翻译"
+  },
+  "options_page": "src/options/options.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/content.js"],
+      "css": ["src/content/content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

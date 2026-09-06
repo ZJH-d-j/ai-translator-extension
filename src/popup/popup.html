@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>AI 网页翻译</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup">
+    <header class="popup-header">
+      <span class="logo">译</span>
+      <span class="title">AI 网页翻译</span>
+      <button id="openSettings" class="icon-btn" title="设置">⚙</button>
+    </header>
+
+    <div id="configWarning" class="warning hidden">
+      尚未配置 API Key，<a href="#" id="goSettings">去设置</a>
+    </div>
+
+    <div class="actions">
+      <button id="translatePageBtn" class="btn btn-primary">翻译本页</button>
+      <button id="summarizePageBtn" class="btn btn-secondary">总结本页</button>
+    </div>
+
+    <div class="divider">快速翻译</div>
+
+    <textarea id="quickInput" class="quick-input" rows="3" placeholder="输入要翻译的文本（自动识别中英文）"></textarea>
+    <button id="quickTranslateBtn" class="btn btn-primary btn-block">翻译</button>
+    <div id="quickResult" class="quick-result hidden"></div>
+
+    <div id="status" class="status"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

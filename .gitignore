@@ -1,0 +1,22 @@
+# 操作系统
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 日志与临时文件
+*.log
+*.tmp
+
+# 环境变量与密钥（示例模板除外）
+.env
+.env.*
+!.env.example
+
+# 依赖与构建产物（本插件为纯原生 JS，预留）
+node_modules/
+dist/
