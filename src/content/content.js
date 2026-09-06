@@ -32,13 +32,24 @@
 
   function sendMessage(msg) {
     return new Promise(resolve => {
-      chrome.runtime.sendMessage(msg, resp => {
-        if (chrome.runtime.lastError) {
-          resolve({ ok: false, error: chrome.runtime.lastError.message });
-        } else {
-          resolve(resp || { ok: false, error: '无响应' });
-        }
-      });
+      try {
+        chrome.runtime.sendMessage(msg, resp => {
+          if (chrome.runtime.lastError) {
+            const err = chrome.runtime.lastError.message || '';
+            resolve({
+              ok: false,
+              error: err.includes('Extension context invalidated')
+                ? '扩展已更新，请刷新本页面后重试'
+                : err
+            });
+          } else {
+            resolve(resp || { ok: false, error: '无响应' });
+          }
+        });
+      } catch (e) {
+        // 扩展重载后 chrome.runtime 本身可能抛错
+        resolve({ ok: false, error: '扩展已更新，请刷新本页面后重试' });
+      }
     });
   }
 
@@ -144,23 +155,28 @@
 
   const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'CODE', 'PRE', 'INPUT', 'SELECT', 'OPTION', 'SVG']);
 
-  function collectTextNodes() {
-    const nodes = [];
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        const text = node.nodeValue;
-        if (!text || text.trim().length < 2) return NodeFilter.FILTER_REJECT;
-        const el = node.parentElement;
-        if (!el || SKIP_TAGS.has(el.tagName)) return NodeFilter.FILTER_REJECT;
-        if (el.closest('.' + ROOT_CLASS)) return NodeFilter.FILTER_REJECT;
-        // 跳过纯数字/符号
-        if (!/[a-zA-Z一-鿿]/.test(text)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    });
+  // 递归收集文本节点，穿透 Shadow DOM（MSN 等站点正文在 shadow root 里）
+  function collectDeep(root, acceptNode, out) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode });
     let n;
-    while ((n = walker.nextNode())) nodes.push(n);
-    return nodes;
+    while ((n = walker.nextNode())) out.push(n);
+    root.querySelectorAll('*').forEach(el => {
+      if (el.shadowRoot) collectDeep(el.shadowRoot, acceptNode, out);
+    });
+    return out;
+  }
+
+  function collectTextNodes() {
+    return collectDeep(document.body, node => {
+      const text = node.nodeValue;
+      if (!text || text.trim().length < 2) return NodeFilter.FILTER_REJECT;
+      const el = node.parentElement;
+      if (!el || SKIP_TAGS.has(el.tagName)) return NodeFilter.FILTER_REJECT;
+      if (el.closest('.' + ROOT_CLASS)) return NodeFilter.FILTER_REJECT;
+      // 跳过纯数字/符号
+      if (!/[a-zA-Z一-鿿]/.test(text)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }, []);
   }
 
   // 按长度把文本节点分批
@@ -201,7 +217,7 @@
     }
     progressBar.innerHTML = '';
     const label = document.createElement('span');
-    label.textContent = text + (pct != null ? ` ${Math.round(pct * 100)}%` : '');
+    label.textContent = text;
     progressBar.appendChild(label);
     if (pct != null && pct >= 1) {
       const restore = document.createElement('button');
@@ -235,11 +251,12 @@
     const dir = await resolveDirection(pageText);
     const targetLang = dir.targetLang;
 
-    const batches = makeBatches(nodes, 4000);
-    showProgress('正在翻译…', 0);
+    // 小批次：每批更快返回，进度条能及时更新，避免长时间卡在起点
+    const batches = makeBatches(nodes, 1500);
+    showProgress(`正在翻译 0/${batches.length} 批…`, 0);
 
     // 多批次并行请求，显著减少等待时间；单批失败不影响其他批次
-    let done = 0, failed = 0;
+    let done = 0, failed = 0, lastError = '';
     async function runBatch(batch) {
       const numbered = batch.map((n, idx) => `<${idx + 1}>${n.nodeValue.trim()}`).join('\n');
       try {
@@ -251,15 +268,18 @@
           if (!trans || !node.parentNode) return;
           const span = document.createElement('span');
           span.className = ROOT_CLASS + ' ai-trans-inline';
+          // 内联样式：Shadow DOM 内的节点不受 content.css 影响
+          span.style.cssText = 'display:block;color:#2563eb;font-size:.92em;margin:2px 0 6px;';
           span.textContent = trans;
           node.parentNode.insertBefore(span, node.nextSibling);
           translatedSpans.push(span);
         });
       } catch (err) {
         failed++;
+        lastError = (err && err.message) || String(err);
       }
       done++;
-      showProgress('正在翻译…', done / batches.length);
+      showProgress(`正在翻译 ${done}/${batches.length} 批…`, done / batches.length);
     }
 
     const CONCURRENCY = 4;
@@ -270,8 +290,10 @@
     );
     await Promise.all(workers);
 
-    showProgress(failed ? `翻译完成（${failed} 个批次失败，相应段落保留原文）` : '翻译完成', 1);
-    if (failed < batches.length) {
+    if (failed === batches.length) {
+      showProgress(`翻译失败：${lastError || '所有批次均未成功，请检查网络或稍后重试'}`, 1);
+    } else {
+      showProgress(failed ? `翻译完成（${failed} 个批次失败，相应段落保留原文）` : '翻译完成', 1);
       recordHistory('全页翻译', `${location.hostname}（${nodes.length} 段）`, `译为${targetLang}`);
     }
   }
@@ -279,9 +301,25 @@
   // ---------- 网页总结 ----------
 
   function getPageMainText() {
-    const clone = document.body.cloneNode(true);
-    clone.querySelectorAll('script,style,noscript,svg,nav,footer,header,.' + ROOT_CLASS).forEach(el => el.remove());
-    return (clone.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 6000);
+    // 从实时 DOM 收集正文文本，穿透 Shadow DOM（克隆节点的 innerText 不可靠）
+    const SKIP = new Set([...SKIP_TAGS, 'NAV', 'FOOTER', 'HEADER', 'ASIDE', 'FORM', 'BUTTON']);
+    const nodes = collectDeep(document.body, node => {
+      const text = node.nodeValue;
+      if (!text || !text.trim()) return NodeFilter.FILTER_REJECT;
+      const el = node.parentElement;
+      if (!el || SKIP.has(el.tagName)) return NodeFilter.FILTER_REJECT;
+      if (el.closest('.' + ROOT_CLASS)) return NodeFilter.FILTER_REJECT;
+      if (!/[a-zA-Z一-鿿]/.test(text)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }, []);
+    let text = '', len = 0;
+    for (const n of nodes) {
+      const t = n.nodeValue.trim();
+      if (len + t.length > 6000) break;
+      text += t + ' ';
+      len += t.length;
+    }
+    return text.trim();
   }
 
   async function summarizePage() {

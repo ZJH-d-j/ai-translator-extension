@@ -15,7 +15,51 @@ async function getConfig() {
   };
 }
 
+// 单次请求，出错时抛出带 retryable 标记的 Error
+async function requestOnce(url, body, apiKey) {
+  // 90 秒超时：推理模型偶发长时间不返回，避免前端一直"翻译中"
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90000);
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + apiKey
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+  } catch (e) {
+    const err = e.name === 'AbortError'
+      ? new Error('请求超时（90 秒），请稍后重试')
+      : new Error('网络错误：' + (e.message || e));
+    err.retryable = true;
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => '');
+    const err = new Error(`API 请求失败 (${resp.status}): ${detail.slice(0, 200)}`);
+    err.retryable = resp.status === 429 || resp.status >= 500;
+    throw err;
+  }
+  const data = await resp.json();
+  const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  if (!content) {
+    // 推理模型偶发返回空内容，重试通常能成功
+    const err = new Error('API 返回内容为空');
+    err.retryable = true;
+    throw err;
+  }
+  return { text: content.trim(), usage: data.usage || null };
+}
+
 // 调用 OpenAI 兼容的 chat/completions 接口，返回 { text, usage }
+// 可重试错误（超时/网络/限流/5xx/空内容）最多尝试 3 次
 async function callAI(messages, maxTokens) {
   const { baseUrl, apiKey, model } = await getConfig();
   if (!apiKey) throw new Error('未配置 API Key，请先在管理面板填写');
@@ -24,23 +68,17 @@ async function callAI(messages, maxTokens) {
   const body = { model, messages };
   if (maxTokens) body.max_tokens = maxTokens;
 
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + apiKey
-    },
-    body: JSON.stringify(body)
-  });
-
-  if (!resp.ok) {
-    const detail = await resp.text().catch(() => '');
-    throw new Error(`API 请求失败 (${resp.status}): ${detail.slice(0, 200)}`);
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise(r => setTimeout(r, 1500 * attempt));
+    try {
+      return await requestOnce(url, body, apiKey);
+    } catch (e) {
+      lastErr = e;
+      if (!e.retryable) throw e;
+    }
   }
-  const data = await resp.json();
-  const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-  if (!content) throw new Error('API 返回内容为空');
-  return { text: content.trim(), usage: data.usage || null };
+  throw lastErr;
 }
 
 // 累计 token 消耗
