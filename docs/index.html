@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 网页翻译 — 把整个网页，译成你的语言</title>
+<meta name="description" content="基于 OpenAI 兼容协议的 Edge 翻译扩展：全页翻译、划词翻译、网页总结。自己的 Key，自己的数据，自己的速度。">
+<style>
+  :root {
+    --bg: #070b14;
+    --bg-2: #0c1322;
+    --bg-3: #101a30;
+    --ink: #e9eef8;
+    --ink-dim: #9fabce;
+    --ink-faint: #6b7896;
+    --accent: #4f8dff;
+    --accent-bright: #7fb0ff;
+    --cyan: #2fd4e8;
+    --line: rgba(148, 163, 196, .14);
+    --line-strong: rgba(148, 163, 196, .26);
+    --radius: 14px;
+    --font: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font);
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* 浏览器默认表面的品牌化 */
+  ::selection { background: rgba(79, 141, 255, .32); color: #fff; }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: #223052; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2f4170; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+  a { color: inherit; text-decoration: none; }
+  a:not(.btn):not(.nav-logo):not(.nav-link):hover { text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--accent); }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+
+  /* ---------- 导航 ---------- */
+  .nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    background: rgba(7, 11, 20, .78);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner { display: flex; align-items: center; gap: 36px; height: 64px; }
+  .nav-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; letter-spacing: .01em; }
+  .nav-logo svg { display: block; }
+  .nav-links { display: flex; gap: 28px; margin-left: auto; align-items: center; }
+  .nav-link { color: var(--ink-dim); font-size: 14.5px; transition: color .2s; }
+  .nav-link:hover { color: var(--ink); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 24px; border-radius: 10px;
+    font-size: 15px; font-weight: 600; font-family: var(--font);
+    border: 1px solid transparent; cursor: pointer;
+    transition: transform .18s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease;
+  }
+  .btn-primary {
+    background: var(--accent); color: #fff;
+    box-shadow: 0 8px 24px -8px rgba(0, 0, 0, .55);
+  }
+  .btn-primary:hover { background: #6499ff; transform: translateY(-2px); box-shadow: 0 12px 32px -10px rgba(0, 0, 0, .6); }
+  .btn-ghost { border-color: var(--line-strong); color: var(--ink); background: transparent; }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent-bright); transform: translateY(-2px); }
+  .btn-sm { padding: 8px 18px; font-size: 14px; }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 168px 0 110px; position: relative; }
+  .hero::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(560px 380px at 18% 22%, rgba(79, 141, 255, .13), transparent 65%),
+      radial-gradient(480px 340px at 82% 8%, rgba(47, 212, 232, .08), transparent 65%);
+  }
+  .hero-grid { display: grid; grid-template-columns: 1.02fr .98fr; gap: 64px; align-items: center; position: relative; }
+  .hero h1 {
+    font-size: clamp(2.3rem, 4.6vw, 3.6rem);
+    font-weight: 800; line-height: 1.22; letter-spacing: -0.02em;
+    margin-bottom: 24px;
+  }
+  .hero .sub { font-size: 17.5px; color: var(--ink-dim); max-width: 30em; margin-bottom: 40px; }
+  .hero .sub strong { color: var(--ink); font-weight: 600; }
+  .hero-actions { display: flex; gap: 16px; flex-wrap: wrap; }
+  .hero-note { margin-top: 26px; font-size: 13.5px; color: var(--ink-faint); display: flex; align-items: center; gap: 8px; }
+  .hero-note svg { flex: none; }
+
+  /* Hero 模拟浏览器：自动播放整页翻译 */
+  .browser {
+    background: var(--bg-2);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: 0 30px 80px -20px rgba(0, 0, 0, .6), 0 8px 28px -8px rgba(0, 0, 0, .4);
+  }
+  .browser-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    background: rgba(255, 255, 255, .02);
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot:nth-child(1) { background: #ff5f57; } .dot:nth-child(2) { background: #febc2e; } .dot:nth-child(3) { background: #28c840; }
+  .browser-url {
+    flex: 1; margin-left: 8px; padding: 5px 14px;
+    background: rgba(255, 255, 255, .05); border: 1px solid var(--line);
+    border-radius: 8px; font-size: 12.5px; color: var(--ink-faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .browser-body { padding: 26px 28px 30px; min-height: 330px; }
+  .demo-line { margin-bottom: 20px; }
+  .demo-src { font-size: 14px; color: var(--ink-dim); margin-bottom: 5px; }
+  .demo-trans {
+    font-size: 14px; color: var(--accent-bright);
+    border-left: 2px solid rgba(79, 141, 255, .45); padding-left: 12px;
+    opacity: 0; transform: translateY(8px); filter: blur(3px);
+  }
+  .demo-trans.on {
+    opacity: 1; transform: none; filter: none;
+    transition: opacity .55s cubic-bezier(.16, .84, .3, 1), transform .55s cubic-bezier(.16, .84, .3, 1), filter .55s cubic-bezier(.16, .84, .3, 1);
+  }
+  .demo-progress {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--cyan);
+    background: rgba(47, 212, 232, .08); border: 1px solid rgba(47, 212, 232, .22);
+    padding: 4px 12px; border-radius: 999px; margin-bottom: 22px;
+  }
+  .demo-progress .pulse {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--cyan);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { opacity: .35; transform: scale(.8); } }
+
+  /* ---------- 通用区块 ---------- */
+  .section { padding: 96px 0; }
+  .section h2 {
+    font-size: clamp(1.7rem, 3vw, 2.3rem);
+    font-weight: 800; letter-spacing: -0.015em; line-height: 1.3;
+    margin-bottom: 16px;
+  }
+  .section .lead { color: var(--ink-dim); font-size: 16.5px; max-width: 34em; }
+
+  [data-reveal] { opacity: 0; transform: translateY(26px); transition: opacity .7s cubic-bezier(.16, .84, .3, 1), transform .7s cubic-bezier(.16, .84, .3, 1); }
+  [data-reveal].in { opacity: 1; transform: none; }
+
+  /* ---------- 核心功能：交替行 ---------- */
+  .feature-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 72px; align-items: center;
+    padding: 72px 0; border-top: 1px solid var(--line);
+  }
+  .feature-row:first-of-type { border-top: 0; }
+  .feature-row.flip .f-text { order: 2; }
+  .feature-row.flip .f-demo { order: 1; }
+  .f-icon {
+    width: 46px; height: 46px; border-radius: 12px;
+    background: rgba(79, 141, 255, .1); border: 1px solid rgba(79, 141, 255, .25);
+    display: grid; place-items: center; margin-bottom: 22px;
+  }
+  .f-text h3 { font-size: 24px; font-weight: 700; margin-bottom: 14px; letter-spacing: -0.01em; }
+  .f-text p { color: var(--ink-dim); font-size: 15.5px; margin-bottom: 14px; }
+  .f-tags { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+  .f-tag {
+    font-size: 12.5px; color: var(--accent-bright);
+    border: 1px solid rgba(79, 141, 255, .3); border-radius: 999px; padding: 3px 13px;
+  }
+
+  .panel {
+    background: var(--bg-2); border: 1px solid var(--line-strong);
+    border-radius: var(--radius); padding: 26px 28px;
+    box-shadow: 0 20px 60px -18px rgba(0, 0, 0, .55);
+  }
+  .panel-title { font-size: 13px; color: var(--ink-faint); margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+
+  /* 划词演示 */
+  .sel-text { font-size: 15.5px; color: var(--ink); line-height: 2; }
+  .sel-mark { background: rgba(79, 141, 255, .3); border-radius: 4px; padding: 1px 3px; }
+  .bubble {
+    margin-top: 18px; display: inline-block;
+    background: var(--bg-3); border: 1px solid rgba(79, 141, 255, .4);
+    border-radius: 12px; padding: 14px 18px;
+    box-shadow: 0 12px 36px -8px rgba(0, 0, 0, .6), 0 4px 16px -4px rgba(0, 0, 0, .4);
+    position: relative;
+  }
+  .bubble::before {
+    content: ""; position: absolute; top: -7px; left: 34px;
+    width: 12px; height: 12px; transform: rotate(45deg);
+    background: var(--bg-3); border-left: 1px solid rgba(79, 141, 255, .4); border-top: 1px solid rgba(79, 141, 255, .4);
+  }
+  .bubble-en { font-size: 12.5px; color: var(--ink-faint); margin-bottom: 4px; }
+  .bubble-zh { font-size: 16px; color: var(--accent-bright); font-weight: 600; }
+
+  /* 总结演示 */
+  .sum-item { display: flex; gap: 12px; margin-bottom: 14px; font-size: 14.5px; color: var(--ink-dim); }
+  .sum-item::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-top: 11px; }
+  .sum-verdict {
+    margin-top: 20px; padding-top: 18px; border-top: 1px dashed var(--line-strong);
+    font-size: 14.5px; color: var(--cyan);
+  }
+
+  /* 全页演示（功能行内复用 hero 样式，静态版） */
+  .static .demo-trans { opacity: 1; transform: none; filter: none; }
+
+  /* ---------- 安装步骤 ---------- */
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; margin-top: 56px; }
+  .step {
+    background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 28px 24px;
+    transition: border-color .25s ease, transform .25s ease;
+  }
+  .step:hover { border-color: rgba(79, 141, 255, .45); transform: translateY(-4px); }
+  .step-num {
+    font-size: 13px; font-weight: 700; color: var(--accent);
+    width: 34px; height: 34px; border-radius: 10px;
+    background: rgba(79, 141, 255, .1); border: 1px solid rgba(79, 141, 255, .25);
+    display: grid; place-items: center; margin-bottom: 20px;
+  }
+  .step h4 { font-size: 16.5px; font-weight: 700; margin-bottom: 10px; }
+  .step p { font-size: 13.5px; color: var(--ink-dim); line-height: 1.8; }
+  .step code {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 12px; background: rgba(255, 255, 255, .06);
+    border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px;
+    color: var(--cyan); word-break: break-all;
+  }
+
+  /* ---------- 配置 ---------- */
+  .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 72px; align-items: center; margin-top: 8px; }
+  .config-list { display: grid; gap: 26px; margin-top: 36px; }
+  .config-item { display: flex; gap: 16px; }
+  .config-item svg { flex: none; margin-top: 3px; }
+  .config-item h4 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+  .config-item p { font-size: 14px; color: var(--ink-dim); }
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 12.5px; color: var(--ink-faint); margin-bottom: 7px; }
+  .field .input {
+    background: rgba(255, 255, 255, .04); border: 1px solid var(--line-strong);
+    border-radius: 9px; padding: 11px 14px; font-size: 14px; color: var(--ink);
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  .field .input .mask { color: var(--ink-faint); }
+
+  /* ---------- 结尾 CTA / 页脚 ---------- */
+  .final {
+    text-align: center; padding: 110px 0 100px;
+    background:
+      radial-gradient(600px 320px at 50% 100%, rgba(79, 141, 255, .12), transparent 70%);
+  }
+  .final h2 { margin-bottom: 20px; }
+  .final .lead { margin: 0 auto 40px; }
+  footer {
+    border-top: 1px solid var(--line); padding: 30px 0;
+    font-size: 13px; color: var(--ink-faint);
+    display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width: 900px) {
+    .hero { padding: 128px 0 72px; }
+    .hero-grid { grid-template-columns: 1fr; gap: 48px; }
+    .hero .sub { font-size: 16px; }
+    .feature-row { grid-template-columns: 1fr; gap: 36px; padding: 56px 0; }
+    .feature-row.flip .f-text { order: 1; }
+    .feature-row.flip .f-demo { order: 2; }
+    .steps { grid-template-columns: repeat(2, 1fr); }
+    .config-grid { grid-template-columns: 1fr; gap: 48px; }
+    .section { padding: 72px 0; }
+    .nav-links .nav-link { display: none; }
+  }
+  @media (max-width: 540px) {
+    .wrap { padding: 0 20px; }
+    .steps { grid-template-columns: 1fr; }
+    .hero-actions .btn { width: 100%; justify-content: center; }
+    .browser-body { padding: 20px; min-height: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .demo-trans, [data-reveal] { transition: none; opacity: 1; transform: none; filter: none; }
+    .demo-progress .pulse { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap nav-inner">
+    <a class="nav-logo" href="#top">
+      <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+        <rect width="26" height="26" rx="7" fill="#4f8dff"/>
+        <path d="M7 9.5h7M10.5 7v2.5M8.5 9.5c.6 2.6 2.4 4.9 5 6M13 9.5c-.7 2.8-2.7 5.2-5.5 6.5" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>
+        <path d="M14.5 19l3-7 3 7M15.4 16.8h4.2" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      AI 网页翻译
+    </a>
+    <div class="nav-links">
+      <a class="nav-link" href="#features">核心功能</a>
+      <a class="nav-link" href="#install">安装步骤</a>
+      <a class="nav-link" href="#config">配置</a>
+      <a class="btn btn-primary btn-sm" href="#install">立即安装</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <h1>把整个网页，<br>译成你的语言。</h1>
+      <p class="sub">一款基于 <strong>OpenAI 兼容协议</strong>的 Edge 扩展：整页翻译、划词即译、一键总结。接入你自己的 API Key，<strong>你的数据，不经过任何第三方</strong>。</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#install">免费安装到 Edge</a>
+        <a class="btn btn-ghost" href="#features">了解核心功能</a>
+      </div>
+      <p class="hero-note">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1.5l5.5 2v4c0 3.4-2.3 5.7-5.5 7-3.2-1.3-5.5-3.6-5.5-7v-4L8 1.5z" stroke="#2fd4e8" stroke-width="1.4" stroke-linejoin="round"/><path d="M5.5 8l1.8 1.8L10.8 6" stroke="#2fd4e8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        开源免费 · 配置仅存本地浏览器 · 支持 DeepSeek 等任意兼容服务
+      </p>
+    </div>
+
+    <div class="browser" aria-hidden="true">
+      <div class="browser-bar">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="browser-url">https://example.com/article</span>
+      </div>
+      <div class="browser-body">
+        <div class="demo-progress"><span class="pulse"></span><span id="demoStatus">正在翻译 1/4 批…</span></div>
+        <div class="demo-line">
+          <p class="demo-src">人工智能正在改变我们阅读网页的方式。</p>
+          <p class="demo-trans">Artificial intelligence is changing the way we read the web.</p>
+        </div>
+        <div class="demo-line">
+          <p class="demo-src">只需一次点击，整页内容即刻呈现为你的母语。</p>
+          <p class="demo-trans">With a single click, the entire page appears in your native language.</p>
+        </div>
+        <div class="demo-line">
+          <p class="demo-src">选中任何词句，翻译气泡即时浮现，阅读不被打断。</p>
+          <p class="demo-trans">Select any word or sentence and a translation bubble appears instantly.</p>
+        </div>
+        <div class="demo-line" style="margin-bottom:0">
+          <p class="demo-src">长文不再难读，AI 为你提炼出真正的要点。</p>
+          <p class="demo-trans">Long articles are no longer a chore — AI distills what really matters.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="section" id="features">
+  <div class="wrap">
+    <h2>三种方式，读懂任何网页</h2>
+    <p class="lead">从整页到单词，从精读到速览，覆盖你浏览外文内容的每一个场景。</p>
+
+    <div class="feature-row" data-reveal>
+      <div class="f-text">
+        <div class="f-icon">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8.5" stroke="#4f8dff" stroke-width="1.6"/><path d="M2.5 11h17M11 2.5c2.4 2.3 3.6 5.2 3.6 8.5s-1.2 6.2-3.6 8.5c-2.4-2.3-3.6-5.2-3.6-8.5S8.6 4.8 11 2.5z" stroke="#4f8dff" stroke-width="1.6"/></svg>
+        </div>
+        <h3>全页翻译</h3>
+        <p>一键翻译整页正文，译文以蓝色段落跟随原文逐段呈现，对照阅读不打乱排版。智能分批并发请求，长文也能快速完成；页面更新导致失败的段落保留原文，绝不空白。</p>
+        <div class="f-tags"><span class="f-tag">批量并发</span><span class="f-tag">进度可见</span><span class="f-tag">一键还原</span></div>
+      </div>
+      <div class="f-demo">
+        <div class="panel static">
+          <div class="panel-title">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="#6b7896" stroke-width="1.4"/><path d="M8 4.5V8l2.5 1.8" stroke="#6b7896" stroke-width="1.4" stroke-linecap="round"/></svg>
+            翻译完成 · 132 段
+          </div>
+          <div class="demo-line">
+            <p class="demo-src">Observa a las personas que te rodean y descubrirás algo interesante.</p>
+            <p class="demo-trans">观察一下身边的人，你就会发现一些有趣的规律。</p>
+          </div>
+          <div class="demo-line" style="margin-bottom:0">
+            <p class="demo-src">Quienes parecen astutos y calculadores suelen perder a largo plazo.</p>
+            <p class="demo-trans">那些看起来精明计较的人，往往在长远利益上吃亏。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-row flip" data-reveal>
+      <div class="f-text">
+        <div class="f-icon">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M4 5.5h9M8.5 3.5v2M5.5 5.5c.6 2.3 2.2 4.3 4.4 5.3M11 5.5c-.7 2.5-2.4 4.6-4.9 5.7" stroke="#4f8dff" stroke-width="1.6" stroke-linecap="round"/><path d="M12 18.5l4-9 4 9M13 15.7h6" stroke="#4f8dff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>划词翻译</h3>
+        <p>选中任何词句，翻译气泡即刻浮现在旁边，不打断阅读节奏。支持中英文互译与多语种方向，生词、长句、专业术语，指哪译哪。</p>
+        <div class="f-tags"><span class="f-tag">即选即译</span><span class="f-tag">气泡跟随</span><span class="f-tag">不打断阅读</span></div>
+      </div>
+      <div class="f-demo">
+        <div class="panel">
+          <div class="panel-title">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3.5h12M2 8h8M2 12.5h10" stroke="#6b7896" stroke-width="1.4" stroke-linecap="round"/></svg>
+            选中即译
+          </div>
+          <p class="sel-text">真正高效的学习者懂得 <span class="sel-mark">leverage their time</span>，把精力花在最重要的事情上，而不是平均分配。</p>
+          <div class="bubble">
+            <p class="bubble-en">leverage their time</p>
+            <p class="bubble-zh">充分利用他们的时间</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-row" data-reveal>
+      <div class="f-text">
+        <div class="f-icon">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M4 3.5h14v12.5H9l-5 4v-16.5z" stroke="#4f8dff" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.5 7.5h7M7.5 10.5h5" stroke="#4f8dff" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </div>
+        <h3>网页总结</h3>
+        <p>三千字的长文，三秒钟的要点。AI 通读全文后用中文提炼 3–6 个核心观点并给出一句总评，资讯、论文、财报，先读要点再决定要不要深读。</p>
+        <div class="f-tags"><span class="f-tag">中文要点</span><span class="f-tag">穿透 Shadow DOM</span><span class="f-tag">3 秒出结果</span></div>
+      </div>
+      <div class="f-demo">
+        <div class="panel">
+          <div class="panel-title">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.2L8 11.6l-3.8 1.9.7-4.2-3.1-3 4.3-.6L8 1.8z" stroke="#6b7896" stroke-width="1.3" stroke-linejoin="round"/></svg>
+            本页总结
+          </div>
+          <div class="sum-item">精明计较的人只赢眼前小利，长远会输掉人脉与机会。</div>
+          <div class="sum-item">厚道和善者更容易赢得人心，也更容易获得长期回报。</div>
+          <div class="sum-item">作者用竞聘案例说明：计较琐事的人往往亏空人情储蓄。</div>
+          <p class="sum-verdict">总评：短期精明不如长期厚道，人际关系是最被低估的资产。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="install" style="background: var(--bg-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);">
+  <div class="wrap">
+    <h2>两分钟，装到你的浏览器</h2>
+    <p class="lead">无需上架商店，开发者模式直接加载，全程离线完成。</p>
+    <div class="steps" data-reveal>
+      <div class="step">
+        <div class="step-num">1</div>
+        <h4>获取源码</h4>
+        <p>克隆或下载本仓库到本地任意目录，解压备用。</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h4>打开扩展页</h4>
+        <p>Edge 地址栏输入 <code>edge://extensions</code>，打开左侧「开发人员模式」。</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h4>加载扩展</h4>
+        <p>点击「加载解压缩的扩展」，选择项目根目录即可完成安装。</p>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <h4>填入密钥</h4>
+        <p>打开管理面板，填入 Base URL 与 API Key，测试连接通过即可使用。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="config">
+  <div class="wrap config-grid">
+    <div data-reveal>
+      <h2>你的 Key，你的数据</h2>
+      <p class="lead">兼容任何 OpenAI 协议的服务商，密钥只保存在你自己的浏览器里。</p>
+      <div class="config-list">
+        <div class="config-item">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2.5" y="4" width="15" height="12" rx="2.5" stroke="#4f8dff" stroke-width="1.5"/><path d="M2.5 8h15" stroke="#4f8dff" stroke-width="1.5"/><circle cx="5.5" cy="6" r=".9" fill="#4f8dff"/></svg>
+          <div>
+            <h4>任意兼容服务</h4>
+            <p>DeepSeek、OpenAI、Azure、本地部署模型：只要支持 chat/completions 协议即可接入。</p>
+          </div>
+        </div>
+        <div class="config-item">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 1.8L17 4.5v5c0 4.2-2.9 7-7 8.7-4.1-1.7-7-4.5-7-8.7v-5l7-2.7z" stroke="#4f8dff" stroke-width="1.5" stroke-linejoin="round"/><path d="M7 9.8l2.2 2.2 3.8-4" stroke="#4f8dff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div>
+            <h4>隐私本地优先</h4>
+            <p>配置、历史记录与 Token 统计全部存储在本地浏览器，插件自身不持有任何服务器。</p>
+          </div>
+        </div>
+        <div class="config-item">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 15.5V10a7 7 0 0114 0v5.5" stroke="#4f8dff" stroke-width="1.5" stroke-linecap="round"/><path d="M3 12.5h3v4H4a1 1 0 01-1-1v-3zM17 12.5h-3v4h2a1 1 0 001-1v-3z" stroke="#4f8dff" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          <div>
+            <h4>管理面板</h4>
+            <p>语言方向切换、翻译历史回溯、Token 消耗统计，一切都在一个页面里完成。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-reveal>
+      <div class="panel">
+        <div class="panel-title">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z" stroke="#6b7896" stroke-width="1.4"/><path d="M13.3 10a1.7 1.7 0 00.34 1.87l.06.06a1.4 1.4 0 11-1.98 1.98l-.06-.06A1.7 1.7 0 0010 13.3a1.7 1.7 0 00-1.03 1.55v.09a1.4 1.4 0 11-2.8 0v-.05A1.7 1.7 0 005 13.3a1.7 1.7 0 00-1.87.34l-.06.06a1.4 1.4 0 11-1.98-1.98l.06-.06A1.7 1.7 0 001.5 10a1.7 1.7 0 00-1.55-1.03h-.09a1.4 1.4 0 110-2.8h.05A1.7 1.7 0 001.5 5a1.7 1.7 0 00-.34-1.87l-.06-.06a1.4 1.4 0 111.98-1.98l.06.06A1.7 1.7 0 005 1.5a1.7 1.7 0 001.03-1.55v-.09a1.4 1.4 0 112.8 0v.05A1.7 1.7 0 0010 1.5a1.7 1.7 0 001.87-.34l.06-.06a1.4 1.4 0 111.98 1.98l-.06.06a1.7 1.7 0 00-.34 1.63 1.7 1.7 0 001.55 1.03h.09a1.4 1.4 0 110 2.8h-.05A1.7 1.7 0 0013.3 10z" stroke="#6b7896" stroke-width="1.2"/></svg>
+          管理面板 · API 配置
+        </div>
+        <div class="field">
+          <label>Base URL</label>
+          <div class="input">https://api.deepseek.com</div>
+        </div>
+        <div class="field">
+          <label>API Key</label>
+          <div class="input">sk-<span class="mask">••••••••••••••••••••••••</span></div>
+        </div>
+        <div class="field" style="margin-bottom:22px">
+          <label>模型</label>
+          <div class="input">deepseek-chat</div>
+        </div>
+        <a class="btn btn-primary" href="#install" style="width:100%; justify-content:center;">测试连接并开始使用</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap" data-reveal>
+    <h2>今晚就读懂那篇<br>你收藏已久的外文文章。</h2>
+    <p class="lead">开源、免费、两分钟装好。外语信息差，到此为止。</p>
+    <a class="btn btn-primary" href="#install" style="padding:14px 36px; font-size:16px;">立即安装</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap" style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; width:100%;">
+    <span>AI 网页翻译 · 基于 OpenAI 兼容协议的 Edge 扩展</span>
+    <span>开源项目 · 配置与数据仅存本地</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Hero 演示：译文逐段浮现，循环播放
+  var trans = Array.prototype.slice.call(document.querySelectorAll('.hero .demo-trans'));
+  var status = document.getElementById('demoStatus');
+  if (!reduced && trans.length) {
+    var timer;
+    var play = function () {
+      trans.forEach(function (el) { el.classList.remove('on'); });
+      var i = 0;
+      var step = function () {
+        if (i < trans.length) {
+          trans[i].classList.add('on');
+          status.textContent = '正在翻译 ' + (i + 1) + '/4 批…';
+          i++;
+          timer = setTimeout(step, 900);
+        } else {
+          status.textContent = '翻译完成 · 4/4 批';
+          timer = setTimeout(play, 4200);
+        }
+      };
+      step();
+    };
+    play();
+  } else {
+    trans.forEach(function (el) { el.classList.add('on'); });
+    if (status) status.textContent = '翻译完成 · 4/4 批';
+  }
+
+  // 滚动进入视口的渐入
+  var els = document.querySelectorAll('[data-reveal]');
+  if (reduced || !('IntersectionObserver' in window)) {
+    els.forEach(function (el) { el.classList.add('in'); });
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.12 });
+    els.forEach(function (el) { io.observe(el); });
+  }
+})();
+</script>
+
+</body>
+</html>
